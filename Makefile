@@ -141,7 +141,7 @@ status: ## Check if sit-reminder is running
 stats: ## Show today's break statistics
 	@echo ""
 	@echo "  📊 Today's Stats ($$(date '+%Y-%m-%d'))"
-	@echo "  ─────────────────────────"
+	@echo "  ─────────────────────────────────"
 	@if [ -f "$(STATE_DIR)/sit-reminder.log" ]; then \
 		TODAY=$$(date '+%Y-%m-%d'); \
 		BREAKS=$$(grep "^$$TODAY" "$(STATE_DIR)/sit-reminder.log" | grep -c "BREAK:" || echo 0); \
@@ -150,14 +150,30 @@ stats: ## Show today's break statistics
 		TOTAL_MIN=$$(( CHECKS * 2 )); \
 		HOURS=$$(( TOTAL_MIN / 60 )); \
 		MINS=$$(( TOTAL_MIN % 60 )); \
-		echo "  Breaks taken:      $$BREAKS"; \
-		echo "  Reminders sent:    $$NOTIFS"; \
-		echo "  Time at computer:  ~$${HOURS}h $${MINS}m"; \
+		LONGEST=$$(grep "^$$TODAY" "$(STATE_DIR)/sit-reminder.log" | grep "CHECK:" | \
+			sed -n 's/.*[Ss]it[zt].*seit\{0,1\} \([0-9]*\) [Mm]in.*/\1/p; s/.*Sitting \([0-9]*\) min.*/\1/p' | sort -n | tail -1 || echo 0); \
+		LONGEST=$${LONGEST:-0}; \
+		ACTS=$$(grep "^$$TODAY" "$(STATE_DIR)/sit-reminder.log" | grep -c "ACTIVITY:" || echo 0); \
+		echo "  Breaks taken:       $$BREAKS"; \
+		echo "  Activities logged:  $$ACTS"; \
+		echo "  Reminders sent:     $$NOTIFS"; \
+		echo "  Time at computer:   ~$${HOURS}h $${MINS}m"; \
+		echo "  Longest session:    $${LONGEST} min"; \
 		echo ""; \
-		if [ "$$BREAKS" -gt 0 ]; then \
-			echo "  💪 Keep it up!"; \
+		if [ "$$ACTS" -gt 0 ]; then \
+			echo "  Today's activities:"; \
+			grep "^$$TODAY" "$(STATE_DIR)/sit-reminder.log" | grep "ACTIVITY:" | \
+				sed 's/.*ACTIVITY: /    ✅ /' | tail -10; \
+			echo ""; \
+		fi; \
+		if [ "$$BREAKS" -ge 6 ]; then \
+			echo "  🏆 Outstanding! $$BREAKS breaks — your body thanks you."; \
+		elif [ "$$BREAKS" -ge 3 ]; then \
+			echo "  💪 Solid day! $$BREAKS breaks so far."; \
+		elif [ "$$BREAKS" -ge 1 ]; then \
+			echo "  🦵 Good start — $$BREAKS break(s). Keep moving!"; \
 		elif [ "$$NOTIFS" -gt 0 ]; then \
-			echo "  🦵 You got reminders but no breaks yet — time to move!"; \
+			echo "  ⚠️  $$NOTIFS reminders but no breaks yet — time to move!"; \
 		else \
 			echo "  Just getting started today."; \
 		fi; \

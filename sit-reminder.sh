@@ -189,6 +189,7 @@ write_state() {
 last_break_epoch=${last_break_epoch}
 notified_epoch=${notified_epoch:-0}
 idle_asked_epoch=${idle_asked_epoch:-0}
+break_pending=${break_pending:-0}
 STATEEOF
 }
 
@@ -196,8 +197,42 @@ do_break() {
     last_break_epoch=$(date +%s)
     notified_epoch=0
     idle_asked_epoch=0
+    break_pending=1
     write_state
     log_msg "BREAK: $1"
+}
+
+# === Break activity confirmation ===
+# When user returns from a break, ask what they did.
+# Logged as ACTIVITY for stats tracking.
+
+ask_break_activity() {
+    local result
+
+    if [[ "$LANGUAGE" == "de" ]]; then
+        result=$(osascript <<'APPLESCRIPT'
+set activities to {"Gedehnt / Gestreckt", "Kniebeugen / Beine mobilisiert", "Spaziert / Herumgelaufen", "Wasser geholt", "Augen entspannt (Fensterblick)", "Schultern / Nacken gelockert", "Nur kurz aufgestanden"}
+set theChoice to choose from list activities with title "🦵 Willkommen zurueck!" with prompt "Was hast du in der Pause gemacht?" default items {"Nur kurz aufgestanden"}
+if theChoice is false then
+    return "skipped"
+else
+    return item 1 of theChoice
+end if
+APPLESCRIPT
+        ) || true
+    else
+        result=$(osascript <<'APPLESCRIPT'
+set activities to {"Stretched / Mobility", "Squats / Leg work", "Walked around", "Got water", "Eye break (looked outside)", "Shoulder / Neck rolls", "Just stood up briefly"}
+set theChoice to choose from list activities with title "🦵 Welcome back!" with prompt "What did you do during your break?" default items {"Just stood up briefly"}
+if theChoice is false then
+    return "skipped"
+else
+    return item 1 of theChoice
+end if
+APPLESCRIPT
+        ) || true
+    fi
+    echo "$result"
 }
 
 # === Interactive dialog ===
@@ -298,13 +333,25 @@ main() {
     sitting_duration=$(( now - last_break_epoch ))
     sitting_min=$(( sitting_duration / 60 ))
 
-    # 4. Auto-break: 10+ min idle, no dialog answered
+    # 4. Break confirmation: user returned from break → ask what they did
+    if [[ "${break_pending:-0}" -eq 1 && "$idle_sec" -lt "$IDLE_ASK_SEC" ]]; then
+        log_msg "WELCOME: User returned from break, asking activity"
+        local activity_done
+        activity_done=$(ask_break_activity)
+        if [[ "$activity_done" != "skipped" && -n "$activity_done" ]]; then
+            log_msg "ACTIVITY: $activity_done"
+        fi
+        break_pending=0
+        write_state
+    fi
+
+    # 5. Auto-break: 10+ min idle, no dialog answered
     if [[ "$idle_sec" -ge "$IDLE_AUTOBREAK_SEC" && "${idle_asked_epoch:-0}" -eq 0 ]]; then
         do_break "Auto-break after ${idle_sec}s idle (no dialog answered)"
         exit 0
     fi
 
-    # 5. Dialog: 5+ min idle, cooldown expired
+    # 6. Dialog: 5+ min idle, cooldown expired
     local dialog_shown=0
     if [[ "$idle_sec" -ge "$IDLE_ASK_SEC" ]]; then
         local should_ask=0
@@ -337,7 +384,7 @@ main() {
         fi
     fi
 
-    # 6. Time jump check (sleep/restart)
+    # 7. Time jump check (sleep/restart)
     if [[ "$sitting_duration" -gt 14400 && "$idle_sec" -ge "$IDLE_ASK_SEC" ]]; then
         do_break "Time jump detected (${sitting_duration}s sitting + ${idle_sec}s idle)"
         exit 0
@@ -345,7 +392,7 @@ main() {
 
     log_msg "CHECK: Sitting ${sitting_min} min, idle ${idle_sec}s, notified=${notified_epoch:-0}, asked=${idle_asked_epoch:-0}"
 
-    # 7. Stand-up reminder (notification)
+    # 8. Stand-up reminder (notification)
     if [[ "$dialog_shown" -eq 0 && "$sitting_duration" -ge "$SIT_LIMIT_SEC" ]]; then
         local should_notify=0
         if [[ "${notified_epoch:-0}" -eq 0 ]]; then
