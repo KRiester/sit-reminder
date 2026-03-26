@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────
+# Sit-Reminder Configuration
+# ─────────────────────────────────────────────
+# Edit this file anytime — changes take effect
+# within 2 minutes (next check cycle).
+#
+# Location: ~/.config/sit-reminder/config
+# ─────────────────────────────────────────────
+
+# ── Timing ──────────────────────────────────
+
+# Minutes of continuous sitting before the first reminder
+SIT_LIMIT_MIN=35
+
+# Minutes between repeated reminders (if you keep sitting)
+RENOTIFY_MIN=20
+
+# Active hours (24h format). No reminders outside these hours.
+ACTIVE_HOUR_START=7
+ACTIVE_HOUR_END=22
+
+# ── Language ────────────────────────────────
+
+# "en" for English, "de" for German
+LANGUAGE=en
+
+# ── Personal health reason (optional) ──────
+
+# Shown in reminders for extra motivation.
+# Leave empty for generic messages.
+# Examples: "knee health", "back pain", "circulation", "your eyes"
+REASON=""
+
+# ── Break activities ────────────────────────
+
+# One random activity is suggested per reminder.
+# Add your own! Keep them short (one sentence).
+# Remove any you don't like.
+ACTIVITIES=(
+    "Stand up and stretch for 30 seconds"
+    "Walk to the kitchen and get some water"
+    "Do 10 squats — your legs will thank you"
+    "Roll your shoulders: 10 forward, 10 back"
+    "Look out the window for 20 seconds (eyes need breaks too)"
+    "Touch your toes, then reach for the ceiling"
+    "Take a short walk around the room"
+    "Do some gentle knee bends"
+    "Stretch your hip flexors (30s each side)"
+    "Circle your wrists — 10 times each direction"
+)
+
+# ── Advanced (usually no need to change) ────
+
+# Seconds of idle before asking "what were you doing?"
+# IDLE_ASK_SEC=300
+
+# Seconds of idle (no dialog answered) before auto-break
+# IDLE_AUTOBREAK_SEC=600
+
+# Seconds between dialog re-asks during long idle periods
+# DIALOG_COOLDOWN_SEC=1200
