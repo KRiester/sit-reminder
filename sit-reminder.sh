@@ -96,7 +96,7 @@ get_motivational_message() {
         "5 Min jetzt = schaerferer Fokus fuer die naechste Stunde."
         "Sitzen ist das neue Rauchen. Du weisst was zu tun ist."
         "Dein Koerper ist dein wichtigstes Werkzeug. Halt ihn am Laufen."
-        "Ein kurzer Spaziergang resettet dein Gehirn besser als Kaffee."
+        "Ein kurzer Spaziergang erfrischt dein Gehirn besser als Kaffee."
         "Kreativitaet fliesst, wenn Blut fliesst."
         "Dein zukuenftiges Ich wird dir fuer diese Pause danken."
         "Kleine Bewegungen jetzt verhindern grosse Probleme spaeter."
@@ -193,6 +193,7 @@ idle_asked_epoch=${idle_asked_epoch:-0}
 break_pending=${break_pending:-0}
 break_start_epoch=${break_start_epoch:-0}
 last_active_epoch=${last_active_epoch:-0}
+notify_count=${notify_count:-0}
 STATEEOF
 }
 
@@ -206,6 +207,7 @@ do_break() {
     last_break_epoch=$(date +%s)
     notified_epoch=0
     idle_asked_epoch=0
+    notify_count=0
     break_pending=1
     write_state
     log_msg "BREAK: $1"
@@ -332,27 +334,45 @@ ask_still_sitting() {
 
 send_notification() {
     local sitting_min=${1:-35}
+    local count=${notify_count:-0}
     local motivation
     local activity
-    motivation=$(get_motivational_message)
-    activity=$(get_random_activity)
-
     local reason_suffix=""
     [[ -n "$REASON" ]] && reason_suffix=" ($REASON)"
 
-    if [[ "$LANGUAGE" == "de" ]]; then
-        local title="🦵 Zeit fuer Bewegung!${reason_suffix}"
-        local subtitle="${sitting_min} Min. am Stueck gesessen"
+    # Eskalation: nach 4+ Erinnerungen sanfteren, eindringlicheren Ton
+    if [[ "$count" -ge 3 ]]; then
+        # Empathische Eskalation — kein Spam, sondern Perspektivwechsel
+        if [[ "$LANGUAGE" == "de" ]]; then
+            local title="🦵 ${sitting_min} Min. am Stueck${reason_suffix}"
+            local subtitle="Erinnerung $(( count + 1 ))"
+            motivation="Dein Koerper fragt leise. Nur 2 Min. reichen."
+        else
+            local title="🦵 ${sitting_min} min straight${reason_suffix}"
+            local subtitle="Reminder $(( count + 1 ))"
+            motivation="Your body is asking gently. Just 2 min is enough."
+        fi
+        activity=$(get_random_activity)
         local msg="${motivation} → ${activity}"
     else
-        local title="🦵 Time to move!${reason_suffix}"
-        local subtitle="${sitting_min} min sitting"
-        local msg="${motivation} → ${activity}"
+        # Normale Notification
+        motivation=$(get_motivational_message)
+        activity=$(get_random_activity)
+        if [[ "$LANGUAGE" == "de" ]]; then
+            local title="🦵 Zeit fuer Bewegung!${reason_suffix}"
+            local subtitle="${sitting_min} Min. am Stueck gesessen"
+            local msg="${motivation} → ${activity}"
+        else
+            local title="🦵 Time to move!${reason_suffix}"
+            local subtitle="${sitting_min} min sitting"
+            local msg="${motivation} → ${activity}"
+        fi
     fi
 
     osascript -e "display notification \"$msg\" with title \"$title\" subtitle \"$subtitle\" sound name \"Funk\""
 
-    log_msg "NOTIFY: ${motivation} | ${activity} (${sitting_min} min)"
+    notify_count=$(( count + 1 ))
+    log_msg "NOTIFY: ${motivation} | ${activity} (${sitting_min} min, #${notify_count})"
 }
 
 # ============================================================
@@ -449,11 +469,17 @@ main() {
     fi
 
     # 9. Stand-up reminder (notification)
+    # Nach 3+ Notifications: laengeres Intervall (50% mehr) um Spam zu vermeiden
+    local effective_renotify=$RENOTIFY_SEC
+    if [[ "${notify_count:-0}" -ge 3 ]]; then
+        effective_renotify=$(( RENOTIFY_SEC * 3 / 2 ))
+    fi
+
     if [[ "$dialog_shown" -eq 0 && "$sitting_duration" -ge "$SIT_LIMIT_SEC" ]]; then
         local should_notify=0
         if [[ "${notified_epoch:-0}" -eq 0 ]]; then
             should_notify=1
-        elif [[ $(( now - notified_epoch )) -ge "$RENOTIFY_SEC" ]]; then
+        elif [[ $(( now - notified_epoch )) -ge "$effective_renotify" ]]; then
             should_notify=1
         fi
 

@@ -35,7 +35,11 @@ Key design decisions:
 - **Not just a timer.** Detects screen lock, display sleep, and keyboard/mouse activity.
 - **Asks, doesn't assume.** When you stop typing, it asks if you were reading or actually away.
 - **No spam.** 20-min cooldown between dialogs. Reminders repeat but don't stack.
+- **Smart escalation.** After 4+ ignored reminders, the tone shifts to empathetic and interval increases.
+- **Overnight-aware.** Left your laptop on overnight? Silent reset, no annoying dialog.
 - **Your click doesn't cheat the system.** Idle time is measured *before* the dialog appears.
+
+See **[FLOW.md](FLOW.md)** for the complete user experience walkthrough.
 
 ## Install
 
@@ -116,11 +120,42 @@ For comparison: a single Chrome tab uses more resources continuously than this s
 | `~/Library/LaunchAgents/com.sit-reminder.plist` | Auto-start every 2 min |
 | `~/.local/share/sit-reminder/` | State + logs (auto-created) |
 
+## Advanced config
+
+These settings live in `~/.config/sit-reminder/config` alongside the basic options above.
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| `IDLE_ASK_SEC` | 300 | Seconds of no input before asking "Were you away?" |
+| `IDLE_AUTOBREAK_SEC` | 600 | Seconds idle to auto-detect a break (no dialog) |
+| `DIALOG_COOLDOWN_SEC` | 1200 | Minimum seconds between idle dialogs |
+| `LONG_BREAK_MIN` | 120 | Minutes away before skipping the activity dialog |
+
+## FAQ
+
+**Notifications don't appear**
+Check System Settings → Notifications → Script Editor. Notifications must be allowed. Run `make test` to trigger a test notification.
+
+**I left my laptop on overnight — weird dialog in the morning?**
+Won't happen. Breaks longer than 2 hours (configurable via `LONG_BREAK_MIN`) skip the activity dialog entirely. You'll just see a friendly "Welcome back! Timer reset." notification.
+
+**How do I change the language?**
+Edit `~/.config/sit-reminder/config` and set `LANGUAGE=de` (or `en`). Changes take effect within 2 minutes.
+
+**Can I add my own activities?**
+Yes — add lines to the `ACTIVITIES` array in your config. One random activity is shown per reminder.
+
+**How do I temporarily pause it?**
+`launchctl unload ~/Library/LaunchAgents/com.sit-reminder.plist` to pause. Run `make install` to restart.
+
+**It reminds me too often / not often enough**
+Adjust `SIT_LIMIT_MIN` (first reminder) and `RENOTIFY_MIN` (repeat interval). After 4+ ignored reminders, the interval automatically stretches by 50%.
+
 ## Uninstall
 
 ```bash
 make uninstall
-# Config is kept. To remove it too:
+# Config is kept for re-install. To remove it too:
 rm -rf ~/.config/sit-reminder
 ```
 
