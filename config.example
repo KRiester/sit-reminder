@@ -59,3 +59,7 @@ ACTIVITIES=(
 
 # Seconds between dialog re-asks during long idle periods
 # DIALOG_COOLDOWN_SEC=1200
+
+# Minutes away before break counts as "long" (no activity dialog).
+# Overnight, long meetings, etc. get a silent reset instead.
+# LONG_BREAK_MIN=120

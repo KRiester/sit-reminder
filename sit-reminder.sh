@@ -37,6 +37,7 @@ RENOTIFY_SEC=$(( RENOTIFY_MIN * 60 ))
 IDLE_ASK_SEC=${IDLE_ASK_SEC:-300}
 IDLE_AUTOBREAK_SEC=${IDLE_AUTOBREAK_SEC:-600}
 DIALOG_COOLDOWN_SEC=${DIALOG_COOLDOWN_SEC:-1200}
+LONG_BREAK_MIN=${LONG_BREAK_MIN:-120}
 
 # Default activities if not set in config
 if [[ -z "${ACTIVITIES+x}" ]] || [[ ${#ACTIVITIES[@]} -eq 0 ]]; then
@@ -190,10 +191,18 @@ last_break_epoch=${last_break_epoch}
 notified_epoch=${notified_epoch:-0}
 idle_asked_epoch=${idle_asked_epoch:-0}
 break_pending=${break_pending:-0}
+break_start_epoch=${break_start_epoch:-0}
+last_active_epoch=${last_active_epoch:-0}
 STATEEOF
 }
 
 do_break() {
+    # Nur beim ERSTEN Break-Detect den Startzeitpunkt setzen.
+    # So wissen wir spaeter, wie lange die Pause wirklich war
+    # (auch wenn auto-break alle 2 Min. feuert).
+    if [[ "${break_pending:-0}" -ne 1 ]]; then
+        break_start_epoch=$(date +%s)
+    fi
     last_break_epoch=$(date +%s)
     notified_epoch=0
     idle_asked_epoch=0
@@ -207,30 +216,69 @@ do_break() {
 # Logged as ACTIVITY for stats tracking.
 
 ask_break_activity() {
+    local now break_dur_sec break_dur_min
+    now=$(date +%s)
+
+    # Pausendauer berechnen:
+    # Primaer: last_active_epoch (wann der User zuletzt aktiv war)
+    # Fallback: break_start_epoch (wann die erste Break-Detection war)
+    if [[ "${last_active_epoch:-0}" -gt 0 ]]; then
+        break_dur_sec=$(( now - last_active_epoch ))
+    elif [[ "${break_start_epoch:-0}" -gt 0 ]]; then
+        break_dur_sec=$(( now - break_start_epoch ))
+    else
+        break_dur_sec=0
+    fi
+    break_dur_min=$(( break_dur_sec / 60 ))
+
+    # ── Lange Pause (> LONG_BREAK_MIN): kein Dialog ──
+    # Ueber Nacht, langer Termin, etc. — stiller Reset.
+    if [[ "$break_dur_min" -ge "$LONG_BREAK_MIN" ]]; then
+        local break_hours=$(( break_dur_min / 60 ))
+        local break_rest=$(( break_dur_min % 60 ))
+        log_msg "ACTIVITY: Long break (${break_hours}h ${break_rest}m) — dialog skipped"
+
+        # Kurze Welcome-Notification statt nervigem Dialog
+        if [[ "$LANGUAGE" == "de" ]]; then
+            osascript -e "display notification \"Timer zurueckgesetzt. Auf einen gesunden Tag!\" with title \"☀️ Willkommen zurueck!\" subtitle \"Pause: ${break_hours}h ${break_rest}m\" sound name \"Pop\""
+        else
+            osascript -e "display notification \"Timer reset. Let's have a healthy day!\" with title \"☀️ Welcome back!\" subtitle \"Break: ${break_hours}h ${break_rest}m\" sound name \"Pop\""
+        fi
+        echo "long_break"
+        return
+    fi
+
+    # ── Normale Pause: Dialog mit erweiterten Optionen ──
     local result
+    local dur_text=""
+    if [[ "$break_dur_min" -gt 0 ]]; then
+        if [[ "$LANGUAGE" == "de" ]]; then
+            dur_text=" (${break_dur_min} Min.)"
+        else
+            dur_text=" (${break_dur_min} min)"
+        fi
+    fi
 
     if [[ "$LANGUAGE" == "de" ]]; then
-        result=$(osascript <<'APPLESCRIPT'
-set activities to {"Gedehnt / Gestreckt", "Kniebeugen / Beine mobilisiert", "Spaziert / Herumgelaufen", "Wasser geholt", "Augen entspannt (Fensterblick)", "Schultern / Nacken gelockert", "Nur kurz aufgestanden"}
-set theChoice to choose from list activities with title "🦵 Willkommen zurueck!" with prompt "Was hast du in der Pause gemacht?" default items {"Nur kurz aufgestanden"}
+        result=$(osascript -e "
+set activities to {\"Gedehnt / Gestreckt\", \"Kniebeugen / Beine mobilisiert\", \"Spaziert / Herumgelaufen\", \"Wasser geholt\", \"Augen entspannt (Fensterblick)\", \"Schultern / Nacken gelockert\", \"Meeting / Telefonat\", \"Mittagessen / Mahlzeit\", \"Nur kurz aufgestanden\"}
+set theChoice to choose from list activities with title \"🦵 Willkommen zurueck!\" with prompt \"Was hast du in der Pause${dur_text} gemacht?\" default items {\"Nur kurz aufgestanden\"}
 if theChoice is false then
-    return "skipped"
+    return \"skipped\"
 else
     return item 1 of theChoice
 end if
-APPLESCRIPT
-        ) || true
+" ) || true
     else
-        result=$(osascript <<'APPLESCRIPT'
-set activities to {"Stretched / Mobility", "Squats / Leg work", "Walked around", "Got water", "Eye break (looked outside)", "Shoulder / Neck rolls", "Just stood up briefly"}
-set theChoice to choose from list activities with title "🦵 Welcome back!" with prompt "What did you do during your break?" default items {"Just stood up briefly"}
+        result=$(osascript -e "
+set activities to {\"Stretched / Mobility\", \"Squats / Leg work\", \"Walked around\", \"Got water\", \"Eye break (looked outside)\", \"Shoulder / Neck rolls\", \"Meeting / Call\", \"Lunch / Meal\", \"Just stood up briefly\"}
+set theChoice to choose from list activities with title \"🦵 Welcome back!\" with prompt \"What did you do during your break${dur_text}?\" default items {\"Just stood up briefly\"}
 if theChoice is false then
-    return "skipped"
+    return \"skipped\"
 else
     return item 1 of theChoice
 end if
-APPLESCRIPT
-        ) || true
+" ) || true
     fi
     echo "$result"
 }
@@ -338,10 +386,12 @@ main() {
         log_msg "WELCOME: User returned from break, asking activity"
         local activity_done
         activity_done=$(ask_break_activity)
-        if [[ "$activity_done" != "skipped" && -n "$activity_done" ]]; then
+        # "long_break" wird bereits in ask_break_activity geloggt
+        if [[ "$activity_done" != "skipped" && "$activity_done" != "long_break" && -n "$activity_done" ]]; then
             log_msg "ACTIVITY: $activity_done"
         fi
         break_pending=0
+        break_start_epoch=0
         write_state
     fi
 
@@ -392,7 +442,13 @@ main() {
 
     log_msg "CHECK: Sitting ${sitting_min} min, idle ${idle_sec}s, notified=${notified_epoch:-0}, asked=${idle_asked_epoch:-0}"
 
-    # 8. Stand-up reminder (notification)
+    # 8. Track last active time (for break duration calculation)
+    if [[ "$idle_sec" -lt 60 ]]; then
+        last_active_epoch=$now
+        write_state
+    fi
+
+    # 9. Stand-up reminder (notification)
     if [[ "$dialog_shown" -eq 0 && "$sitting_duration" -ge "$SIT_LIMIT_SEC" ]]; then
         local should_notify=0
         if [[ "${notified_epoch:-0}" -eq 0 ]]; then
