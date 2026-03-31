@@ -1,12 +1,34 @@
 # sit-reminder
 
-Smart break reminders for macOS. Zero dependencies. Respects your flow.
+Smart break reminders for macOS — with optional Claude Code remote control.
 
-**Health is not a trade-off for productivity — it's fuel for it.**
+**Your body is your operating system. Everything else runs on top of it.**
 
-## What it does
+## What's in the box
 
-Detects when you've been sitting too long and reminds you to move — with motivational messages and concrete activity suggestions. Uses only built-in macOS tools (no apps to install, no background processes eating your battery).
+- **sit-reminder** — detects when you've been sitting too long, reminds you to move. Zero dependencies, just bash + macOS.
+- **Claude Code Remote Control** — persistent AI session in tmux with auto-restart. Access from your phone via claude.ai. *(optional)*
+- **Menu bar widget** — real-time sitting timer + Claude RC controls in your macOS menu bar via SwiftBar. *(optional)*
+
+## Quick start
+
+```bash
+git clone https://github.com/kilianriester/sit-reminder.git
+cd sit-reminder
+make install          # sit-reminder only
+make install-rc       # add Claude Code Remote Control (needs tmux + Claude CLI)
+make widget           # add menu bar widget (needs SwiftBar)
+```
+
+Or install everything at once:
+
+```bash
+make install-all
+```
+
+## sit-reminder
+
+Detects when you've been sitting too long and reminds you to move — with motivational messages and concrete activity suggestions. Uses only built-in macOS tools.
 
 ```
 🦵 Time to move! (42 min sitting)
@@ -14,7 +36,7 @@ Detects when you've been sitting too long and reminds you to move — with motiv
 → Try: Roll your shoulders: 10 forward, 10 back
 ```
 
-## How it works
+### How it works
 
 ```
   ⏰ Checks every 2 min (via launchd)
@@ -35,137 +57,162 @@ Key design decisions:
 - **Not just a timer.** Detects screen lock, display sleep, and keyboard/mouse activity.
 - **Asks, doesn't assume.** When you stop typing, it asks if you were reading or actually away.
 - **No spam.** 20-min cooldown between dialogs. Reminders repeat but don't stack.
-- **Smart escalation.** After 4+ ignored reminders, the tone shifts to empathetic and interval increases.
+- **Smart escalation.** After 4+ ignored reminders, the tone shifts and interval increases.
 - **Overnight-aware.** Left your laptop on overnight? Silent reset, no annoying dialog.
-- **Your click doesn't cheat the system.** Idle time is measured *before* the dialog appears.
 
-See **[FLOW.md](FLOW.md)** for the complete user experience walkthrough.
-
-## Install
-
-Requires macOS. No Homebrew, no Python, no Node — just bash and built-in macOS tools.
-
-```bash
-git clone https://github.com/kilianriester/sit-reminder.git
-cd sit-reminder
-make install
-```
-
-The installer asks a few questions:
-
-```
-🦵 Sit-Reminder Setup
-─────────────────────
-Sit limit in minutes [35]: 30
-Remind again every X minutes [20]:
-Active hours start (0-23) [7]:
-Active hours end (0-23) [22]:
-Language (en/de) [en]:
-Personal reason, e.g. "knee health" (optional) []: knee health
-
-✅ Installed and running!
-```
-
-## Configure
+### Configure
 
 Edit `~/.config/sit-reminder/config` anytime. Changes take effect within 2 minutes.
 
 ```bash
-# ── Timing ──
 SIT_LIMIT_MIN=35          # Minutes before first reminder
 RENOTIFY_MIN=20           # Minutes between repeated reminders
 ACTIVE_HOUR_START=7
 ACTIVE_HOUR_END=22
-
-# ── Language ──
 LANGUAGE=en               # "en" or "de"
-
-# ── Personal health reason (optional) ──
-REASON="knee health"      # Shown in reminders
-
-# ── Break activities ──
-# One random activity is suggested per reminder.
+REASON="knee health"      # Shown in reminders (optional)
 ACTIVITIES=(
     "Stand up and stretch for 30 seconds"
     "Walk to the kitchen and get some water"
     "Do 10 squats — your legs will thank you"
-    "Roll your shoulders: 10 forward, 10 back"
     # Add your own!
 )
 ```
 
-## Commands
+## Claude Code Remote Control
+
+A persistent Claude Code session that survives crashes, disconnects, and long idle periods. Access it from your phone via claude.ai — no scanning, just open the app and prompt.
+
+### Prerequisites
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
+- tmux (`brew install tmux`)
+
+### Install
 
 ```bash
-make install    # Install and start
-make uninstall  # Stop and remove
-make status     # Is it running? Current session info
-make stats      # Today's break statistics
-make test       # Send a test notification now
-make logs       # Show recent log entries
+make install-rc
 ```
 
-## Resource usage
+### Usage
 
-**Practically zero.** The script runs for ~80ms every 2 minutes, then exits completely. Between checks: no process, no RAM, no CPU, no GPU. `ProcessType: Background` tells macOS to throttle it further when the system is busy.
+```bash
+claude-rc.sh start [project-dir]   # Start (default: $HOME or $CLAUDE_RC_PROJECT)
+claude-rc.sh stop                  # Stop gracefully
+claude-rc.sh status                # Show status + recent log
+claude-rc.sh attach                # Attach to tmux session
+```
 
-For comparison: a single Chrome tab uses more resources continuously than this script uses in a full day.
+### How it works
+
+- Runs `claude remote-control` inside a tmux session
+- Auto-restarts on crash with exponential backoff (5s → 300s, max 50 retries)
+- `caffeinate` prevents Mac sleep while running
+- PID tracking prevents duplicate instances
+- 7-day log retention with auto-rotation
+
+Set `CLAUDE_RC_PROJECT` environment variable to change the default project directory.
+
+## Menu bar widget
+
+Real-time sitting timer + Claude RC controls in your macOS menu bar via [SwiftBar](https://github.com/swiftbar/SwiftBar).
+
+```
+🦵 23m · 3/8            ← sitting time · breaks today
+🦵 23m · 3/8 | ◉ RC     ← with Claude RC running
+```
+
+### Install
+
+```bash
+brew install --cask swiftbar    # if not installed
+make widget
+```
+
+### What you see
+
+- **Timer** — current sitting time, color-coded (green → yellow → orange → red)
+- **Breaks** — progress toward daily goal (X/8)
+- **MOVE!** — flashes red when overdue
+- **Quick actions** — manual break, pause for 1 hour
+- **Claude RC** — start/stop, bridge URL, session attach *(auto-detected, hidden if not installed)*
+
+The widget reads the same state files as the background scripts — no extra processes, no extra resources.
+
+## All commands
+
+```bash
+# Sit-Reminder
+make install        # Install and start
+make uninstall      # Stop and remove
+make status         # Check if running
+make stats          # Today's break statistics
+make test           # Send a test notification
+make logs           # Show recent log entries
+
+# Claude Code Remote Control
+make install-rc     # Install (requires tmux + Claude CLI)
+make uninstall-rc   # Stop and remove
+make status-rc      # Check status
+
+# Combined
+make install-all    # Install everything + widget
+make uninstall-all  # Remove everything
+make widget         # Install menu bar widget
+make help           # Show all commands
+```
 
 ## Files
 
 | Installed to | Purpose |
 |---|---|
-| `~/.local/bin/sit-reminder.sh` | The script |
+| `~/.local/bin/sit-reminder.sh` | Break reminder script |
+| `~/.local/bin/claude-rc.sh` | Remote control manager |
+| `~/.local/bin/start-with-terminal.sh` | SwiftBar → Terminal bridge |
 | `~/.config/sit-reminder/config` | Your configuration |
 | `~/Library/LaunchAgents/com.sit-reminder.plist` | Auto-start every 2 min |
-| `~/.local/share/sit-reminder/` | State + logs (auto-created) |
+| `~/.local/share/sit-reminder/` | State + logs |
+| `~/.claude-rc/` | RC state + logs |
 
-## Advanced config
+## Resource usage
 
-These settings live in `~/.config/sit-reminder/config` alongside the basic options above.
+**Practically zero.** The sit-reminder script runs for ~80ms every 2 minutes, then exits completely. Between checks: no process, no RAM, no CPU. `ProcessType: Background` tells macOS to throttle it further when the system is busy.
 
-| Setting | Default | What it does |
-|---------|---------|--------------|
-| `IDLE_ASK_SEC` | 300 | Seconds of no input before asking "Were you away?" |
-| `IDLE_AUTOBREAK_SEC` | 600 | Seconds idle to auto-detect a break (no dialog) |
-| `DIALOG_COOLDOWN_SEC` | 1200 | Minimum seconds between idle dialogs |
-| `LONG_BREAK_MIN` | 120 | Minutes away before skipping the activity dialog |
+Claude RC runs a persistent tmux + claude process. Typical RAM: ~200-400MB. `caffeinate` prevents sleep but uses negligible resources.
 
 ## FAQ
 
 **Notifications don't appear**
-Check System Settings → Notifications → Script Editor. Notifications must be allowed. Run `make test` to trigger a test notification.
+Check System Settings → Notifications → Script Editor. Run `make test` to trigger a test.
 
-**I left my laptop on overnight — weird dialog in the morning?**
-Won't happen. Breaks longer than 2 hours (configurable via `LONG_BREAK_MIN`) skip the activity dialog entirely. You'll just see a friendly "Welcome back! Timer reset." notification.
+**I left my laptop on overnight — weird dialog?**
+Won't happen. Breaks longer than 2 hours skip the activity dialog entirely.
 
 **How do I change the language?**
-Edit `~/.config/sit-reminder/config` and set `LANGUAGE=de` (or `en`). Changes take effect within 2 minutes.
+Set `LANGUAGE=de` (or `en`) in `~/.config/sit-reminder/config`.
 
 **Can I add my own activities?**
-Yes — add lines to the `ACTIVITIES` array in your config. One random activity is shown per reminder.
+Yes — add lines to the `ACTIVITIES` array in your config.
 
-**How do I temporarily pause it?**
-`launchctl unload ~/Library/LaunchAgents/com.sit-reminder.plist` to pause. Run `make install` to restart.
+**How do I temporarily pause?**
+Click "Pause (1 hour)" in the widget, or run `launchctl unload ~/Library/LaunchAgents/com.sit-reminder.plist`.
 
-**It reminds me too often / not often enough**
-Adjust `SIT_LIMIT_MIN` (first reminder) and `RENOTIFY_MIN` (repeat interval). After 4+ ignored reminders, the interval automatically stretches by 50%.
+**Claude RC won't start**
+Check: `command -v tmux` and `command -v claude`. Both must be in your PATH.
+
+**How do I see the bridge URL?**
+The SwiftBar widget shows it when RC is running. Or: `tmux attach-session -t claude-rc`.
+
+**Can I change the RC project directory?**
+Set `export CLAUDE_RC_PROJECT="/your/path"` before starting, or pass it directly: `claude-rc.sh start /your/path`.
 
 ## Uninstall
 
 ```bash
-make uninstall
-# Config is kept for re-install. To remove it too:
+make uninstall-all
+# Config is kept. To remove it too:
 rm -rf ~/.config/sit-reminder
 ```
-
-## Why
-
-We spend hours at our desks. Fitness trackers remind us, but a notification on your wrist is easy to ignore. A dialog on your screen — right where your attention is — is harder to dismiss.
-
-This started as a personal script for knee rehabilitation. It turned out the combination of idle detection, interactive dialogs, and motivational framing works better than any wearable reminder.
-
-Your body is your primary tool. Keep it running.
 
 ## License
 

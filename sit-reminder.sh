@@ -386,6 +386,20 @@ main() {
         exit 0
     fi
 
+    # 1b. Pause check (via SwiftBar widget)
+    local pause_file="$STATE_DIR/paused_until"
+    if [[ -f "$pause_file" ]]; then
+        local paused_until
+        paused_until=$(cat "$pause_file" 2>/dev/null)
+        if [[ "$(date +%s)" -lt "$paused_until" ]]; then
+            log_msg "SKIP: Paused until $(date -r "$paused_until" '+%H:%M')"
+            exit 0
+        else
+            rm -f "$pause_file"
+            log_msg "RESUME: Pause expired"
+        fi
+    fi
+
     # 2. Screen lock / display off → break
     if is_screen_locked || is_display_off; then
         read_state

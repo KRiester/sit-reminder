@@ -4,20 +4,34 @@ STATE_DIR    := $(HOME)/.local/share/sit-reminder
 PLIST_DIR    := $(HOME)/Library/LaunchAgents
 PLIST_NAME   := com.sit-reminder.plist
 SCRIPT_NAME  := sit-reminder.sh
+SWIFTBAR_DIR := $(HOME)/.swiftbar-plugins
+RC_STATE_DIR := $(HOME)/.claude-rc
 
-.PHONY: install uninstall status stats test logs help
+.PHONY: install install-rc install-all uninstall uninstall-rc uninstall-all status status-rc stats test logs widget help
 
 help: ## Show available commands
 	@echo ""
-	@echo "  🦵 Sit-Reminder"
-	@echo "  ───────────────"
-	@echo "  make install    Install and start sit-reminder"
-	@echo "  make uninstall  Stop and remove everything"
-	@echo "  make status     Check if sit-reminder is running"
-	@echo "  make stats      Show today's break statistics"
-	@echo "  make test       Send a test notification now"
-	@echo "  make logs       Show recent log entries"
-	@echo "  make help       Show this help"
+	@echo "  🦵 Sit-Reminder + Claude RC"
+	@echo "  ────────────────────────────"
+	@echo ""
+	@echo "  Sit-Reminder:"
+	@echo "    make install      Install and start sit-reminder"
+	@echo "    make uninstall    Stop and remove sit-reminder"
+	@echo "    make status       Check if sit-reminder is running"
+	@echo "    make stats        Show today's break statistics"
+	@echo "    make test         Send a test notification now"
+	@echo "    make logs         Show recent log entries"
+	@echo ""
+	@echo "  Claude Code Remote Control:"
+	@echo "    make install-rc   Install Claude RC (requires tmux + Claude CLI)"
+	@echo "    make uninstall-rc Remove Claude RC"
+	@echo "    make status-rc    Check Claude RC status"
+	@echo ""
+	@echo "  Combined:"
+	@echo "    make install-all  Install everything + menu bar widget"
+	@echo "    make uninstall-all Remove everything"
+	@echo "    make widget       Install SwiftBar menu bar widget"
+	@echo "    make help         Show this help"
 	@echo ""
 
 install: ## Interactive install
@@ -105,16 +119,71 @@ install: ## Interactive install
 	echo "  Run 'make test' to see a test notification now." && \
 	echo ""
 
+install-rc: ## Install Claude Code Remote Control
+	@echo ""
+	@echo "  🤖 Claude Code Remote Control Setup"
+	@echo "  ────────────────────────────────────"
+	@echo ""
+	@if ! command -v tmux >/dev/null 2>&1; then \
+		echo "  ❌ tmux not found."; \
+		echo "  Install with: brew install tmux"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if ! command -v claude >/dev/null 2>&1; then \
+		echo "  ❌ Claude Code CLI not found."; \
+		echo "  Install from: https://docs.anthropic.com/en/docs/claude-code"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@mkdir -p "$(INSTALL_DIR)"
+	@mkdir -p "$(RC_STATE_DIR)/logs"
+	@cp claude-rc/claude-rc.sh "$(INSTALL_DIR)/claude-rc.sh"
+	@chmod +x "$(INSTALL_DIR)/claude-rc.sh"
+	@cp claude-rc/start-with-terminal.sh "$(INSTALL_DIR)/start-with-terminal.sh"
+	@chmod +x "$(INSTALL_DIR)/start-with-terminal.sh"
+	@echo ""
+	@echo "  ✅ Claude RC installed!"
+	@echo ""
+	@echo "  Start:   claude-rc.sh start [project-dir]"
+	@echo "  Stop:    claude-rc.sh stop"
+	@echo "  Status:  claude-rc.sh status"
+	@echo "  Attach:  claude-rc.sh attach"
+	@echo ""
+	@echo "  Set CLAUDE_RC_PROJECT to change the default directory."
+	@echo "  The SwiftBar widget will auto-detect Claude RC."
+	@echo ""
+
+install-all: install install-rc widget ## Install everything + menu bar widget
+	@echo ""
+	@echo "  🎉 Full setup complete!"
+	@echo "  sit-reminder + Claude RC + menu bar widget"
+	@echo ""
+
 uninstall: ## Remove sit-reminder completely
 	@echo ""
 	@launchctl unload "$(PLIST_DIR)/$(PLIST_NAME)" 2>/dev/null || true
 	@rm -f "$(PLIST_DIR)/$(PLIST_NAME)"
 	@rm -f "$(INSTALL_DIR)/$(SCRIPT_NAME)"
 	@rm -rf "$(STATE_DIR)"
-	@echo "  ✅ Uninstalled."
+	@echo "  ✅ Sit-Reminder uninstalled."
 	@echo "  Config kept at: $(CONFIG_DIR)/config"
 	@echo "  To remove config too: rm -rf $(CONFIG_DIR)"
 	@echo ""
+
+uninstall-rc: ## Remove Claude Code Remote Control
+	@echo ""
+	@"$(INSTALL_DIR)/claude-rc.sh" stop 2>/dev/null || true
+	@rm -f "$(INSTALL_DIR)/claude-rc.sh"
+	@rm -f "$(INSTALL_DIR)/start-with-terminal.sh"
+	@echo "  ✅ Claude RC uninstalled."
+	@echo "  Logs kept at: $(RC_STATE_DIR)/logs/"
+	@echo ""
+
+uninstall-all: uninstall uninstall-rc ## Remove everything
+	@PLUGIN_DIR=$$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || echo "$(SWIFTBAR_DIR)"); \
+	rm -f "$$PLUGIN_DIR/sit-reminder.5s.sh" 2>/dev/null || true
+	@echo "  Widget removed too."
 
 status: ## Check if sit-reminder is running
 	@echo ""
@@ -137,6 +206,9 @@ status: ## Check if sit-reminder is running
 		tail -5 "$(STATE_DIR)/sit-reminder.log" | sed 's/^/  /'; \
 	fi
 	@echo ""
+
+status-rc: ## Check Claude RC status
+	@"$(INSTALL_DIR)/claude-rc.sh" status 2>/dev/null || echo "  Claude RC is not installed. Run 'make install-rc' first."
 
 stats: ## Show today's break statistics
 	@echo ""
@@ -197,4 +269,24 @@ logs: ## Show recent log entries
 	else \
 		echo "  No log file found. Run 'make install' first."; \
 	fi
+	@echo ""
+
+widget: ## Install SwiftBar menu bar widget
+	@echo ""
+	@if ! command -v swiftbar >/dev/null 2>&1 && [ ! -d "/Applications/SwiftBar.app" ]; then \
+		echo "  SwiftBar not found."; \
+		echo "  Install it with: brew install --cask swiftbar"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@# Detect or create SwiftBar plugin directory
+	@PLUGIN_DIR=$$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || echo "$(SWIFTBAR_DIR)"); \
+	mkdir -p "$$PLUGIN_DIR"; \
+	cp swiftbar/sit-reminder.5s.sh "$$PLUGIN_DIR/sit-reminder.5s.sh"; \
+	chmod +x "$$PLUGIN_DIR/sit-reminder.5s.sh"; \
+	echo "  ✅ Widget installed to: $$PLUGIN_DIR/sit-reminder.5s.sh"; \
+	echo ""; \
+	echo "  Open SwiftBar to see 🦵 in your menu bar."; \
+	echo "  The widget auto-detects Claude RC if installed."; \
+	echo "  Refreshes every 5 seconds."
 	@echo ""
